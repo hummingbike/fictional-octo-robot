@@ -67,18 +67,19 @@ CREATE TABLE chunks (
 
 ## 4. 단계별 로드맵
 
-### Phase 0 — 스파이크 / 기술 검증 (1주 이내)
-- SQLite FTS5로 1만 개 텍스트 파일 색인 후 검색 응답시간 실측.
-- `watchdog`(FSEvents) 이벤트 지연/누락 여부 실측 (특히 대량 변경 시 배치 처리 필요한지 확인).
-- 후보 임베딩 모델 2~3개로 색인 속도/검색 품질 간단 비교.
-- **출력물**: 실측 수치 기반으로 PRD 8장 성공 지표 수치 보정.
+### Phase 0 — 스파이크 / 기술 검증 ✅ 완료 (2026-06-17)
+- [x] SQLite FTS5로 1만 개 텍스트 파일 색인 후 검색 응답시간 실측 → 색인 15.7s, 검색 평균 0.07ms.
+- [x] `watchdog`(FSEvents) 이벤트 지연/누락 여부 실측 → 200건 연속, 평균 11.7ms/최대 14.3ms, 누락 0건.
+  - **버그 발견 및 수정**: 심볼릭 링크를 resolve하지 않은 경로(`/var/...`)를 감시하면 FSEvents가 이벤트를 전혀 전달하지 않음. `.resolve()` 후 감시하도록 수정 (자세한 내용: [BENCHMARK_EVERYTHING.md](BENCHMARK_EVERYTHING.md) 5장). → **Phase 2 구현 시 사용자가 등록하는 폴더 경로는 반드시 resolve 후 watchdog에 전달**해야 함을 설계 요구사항으로 확정.
+- [ ] 후보 임베딩 모델 2~3개로 색인 속도/검색 품질 비교 → **Phase 3로 연기**: `sentence-transformers` 등은 torch 의존성이 무거워(수백MB~GB) 스파이크 범위에서 제외, 모델 선정은 Phase 3 착수 시점에 별도로 진행.
+- **출력물**: 실측 수치로 PRD 7~8장 보정 완료. 부산물로 `sbsearch.indexer`/`sbsearch.search` 핵심 로직이 이미 구현되어 Phase 1로 그대로 이어짐 (아래 참고).
 
 ### Phase 1 — 키워드 검색 MVP
-- 폴더 등록/제외 패턴 설정 (F1).
-- 초기 전체 색인 (F2): 폴더 워크 → 텍스트 읽기 → FTS5 insert.
-- 키워드 검색 CLI (F4, F7): `search "키워드"` → 경로+스니펫+랭킹 출력.
-- 검색 연산자 (F5): AND/OR/NOT, 구문검색, 확장자 필터.
-- `status` 명령 (F8).
+- [x] FTS5 인덱서 (F2 핵심 로직): `sbsearch.indexer.index_directory`/`index_file`/`remove_file` — Phase 0 스파이크에서 선구현, 단위테스트 포함.
+- [x] 검색 (F4 핵심 로직, F5): `sbsearch.search.search` — FTS5 MATCH 문법을 그대로 노출해 AND/OR/NOT/구문검색 지원, 단위테스트 포함.
+- [ ] 폴더 등록/제외 패턴 설정 (F1) — 아직 미구현, 현재는 `index_directory(root)`에 루트 하나만 전달 가능.
+- [ ] CLI 래핑 (F4, F7): `sbsearch search "키워드"` 서브커맨드, plain/json 출력, `--limit`/`-C`.
+- [ ] `status` 명령 (F8).
 
 ### Phase 2 — 실시간 증분 색인
 - FSEvents 구독 데몬(`watch` 서브커맨드 or launchd 등록) (F3).
@@ -103,6 +104,7 @@ CREATE TABLE chunks (
 | 리스크 | 대응 |
 |---|---|
 | FSEvents 이벤트 누락(대량 변경 시) | 주기적(예: 1일 1회) 백그라운드 정합성 검사로 mtime/hash 불일치 파일 재색인 |
+| ~~심볼릭 링크 경로(`/var/...`) 감시 시 FSEvents가 이벤트를 전달하지 않음~~ | **해결됨 (Phase 0)**: 감시 대상 경로는 항상 `.resolve()` 후 watchdog에 전달 |
 | 대형 단일 log 파일(GB 단위) | Phase 4에서 스트리밍 파싱/부분 색인 검토, 1차는 일정 크기 이상 파일은 색인 제외 옵션 제공 |
 | 임베딩 모델 성능/품질 트레이드오프 | Phase 0/3에서 실측 비교 후 결정, 모델 교체 가능하도록 추상화 |
 | SQLite 동시 쓰기(검색 중 색인 갱신) | WAL 모드 사용으로 읽기/쓰기 동시성 확보 |

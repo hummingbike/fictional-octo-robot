@@ -2,25 +2,25 @@
 
 > 단계 구분은 [PLAN.md](PLAN.md) 로드맵과 동일. 완료 항목은 `[x]`로 체크.
 
-## Phase 0 — 스파이크 / 기술 검증
-- [ ] 테스트용 텍스트 코퍼스 준비 (txt/md/log 혼합, 1만 개 / 수백MB 규모)
-- [ ] SQLite FTS5 색인 속도 실측 (파일 수 대비 색인 시간)
-- [ ] SQLite FTS5 검색 응답시간 실측 (`ripgrep` 풀스캔과 비교)
-- [ ] `watchdog`(FSEvents) 이벤트 지연/누락 여부 실측 (대량 변경 시나리오 포함)
-- [ ] 임베딩 모델 후보 2~3개 비교 (색인 속도 / 검색 품질 / 모델 크기)
-- [ ] 실측 결과로 PRD.md 8장 성공 지표 수치 보정
+## Phase 0 — 스파이크 / 기술 검증 ✅ 완료 (2026-06-17)
+- [x] 테스트용 텍스트 코퍼스 준비 (`sbsearch.bench.corpus.generate_corpus`, 시드 고정/needle 삽입 지원)
+- [x] SQLite FTS5 색인 속도 실측 → 1만 파일/11.9MB 기준 15.7초
+- [x] SQLite FTS5 검색 응답시간 실측 (`ripgrep` 풀스캔과 비교) → 평균 0.07ms vs 198.9ms (~2,650배)
+- [x] `watchdog`(FSEvents) 이벤트 지연/누락 여부 실측 → 200건 연속, 평균 11.7ms, 누락 0건. 심볼릭 링크 미해결 시 이벤트 0건 전달되는 버그 발견 및 수정
+- [ ] 임베딩 모델 후보 2~3개 비교 — **Phase 3로 연기** (torch 등 무거운 의존성, 스파이크 범위에서 제외)
+- [x] 실측 결과로 PRD.md 7~8장 수치 보정
 
 ## Phase 1 — 키워드 검색 MVP
-- [ ] 프로젝트 스캐폴딩 (Python 패키지 구조, `pyproject.toml`, CLI 엔트리포인트)
-- [ ] 폴더 등록/제외 패턴 설정 기능 (`.gitignore` 스타일)
-- [ ] 초기 전체 색인 구현 (디렉터리 워크 → 텍스트 추출 → FTS5 insert)
-- [ ] `search` 서브커맨드: 키워드 → 경로 + 스니펫 + BM25 랭킹 출력
-- [ ] 검색 연산자 지원: AND/OR/NOT, 구문검색(`""`), 확장자/경로 필터
+- [x] 프로젝트 스캐폴딩 (Python 패키지 구조, `pyproject.toml`, pytest) — Phase 0에서 선구현
+- [x] FTS5 인덱서 핵심 로직 (`sbsearch.indexer`) — Phase 0에서 선구현, 단위테스트 포함
+- [x] 검색 핵심 로직 + BM25 랭킹 + 검색 연산자 (`sbsearch.search`, FTS5 MATCH 문법 그대로 노출) — Phase 0에서 선구현
+- [ ] 폴더 등록/제외 패턴 설정 기능 (`.gitignore` 스타일) — 미구현, 현재는 단일 루트 경로만 지원
+- [ ] CLI 엔트리포인트 + `search` 서브커맨드 (`sbsearch search "키워드"`)
 - [ ] `status` 서브커맨드: 색인 파일 수 / 마지막 갱신 시각 / 인덱스 크기
 - [ ] plain/json 출력 옵션, `--limit`, `-C`(컨텍스트 줄 수)
 
 ## Phase 2 — 실시간 증분 색인
-- [ ] `watch` 서브커맨드: FSEvents 구독 데몬
+- [ ] `watch` 서브커맨드: FSEvents 구독 데몬 (등록 폴더 경로는 반드시 `.resolve()` 후 watchdog에 전달 — Phase 0에서 발견한 심볼릭 링크 버그 참고)
 - [ ] 생성/수정/삭제/이동 이벤트별 인덱스 갱신 로직
 - [ ] 다중 이벤트 디바운싱 (짧은 시간 내 동일 파일 다중 변경 처리)
 - [ ] 비정상 종료 후 재시작 시 정합성 복구 (mtime/hash 비교)
@@ -43,4 +43,7 @@
 - [x] PLAN.md 초안 작성
 - [x] BENCHMARK_EVERYTHING.md 초안 작성
 - [x] TODO.md 초안 작성
-- [ ] Phase 0 실측 결과 반영하여 PRD/PLAN 수치 업데이트
+- [x] Phase 0 실측 결과 반영하여 PRD/PLAN/TODO 수치 업데이트
+
+## 인프라
+- [x] GitHub Actions CI 워크플로 추가 (macOS/Linux 매트릭스, pytest 자동 실행)
