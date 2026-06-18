@@ -14,12 +14,14 @@ def _wait_until(predicate, timeout=5.0, interval=0.02) -> bool:
 
 
 def test_debouncer_coalesces_rapid_calls_into_one_action():
-    debouncer = Debouncer(delay=0.1)
+    # No sleep between schedule() calls: a fixed inter-call sleep is racy under
+    # CI load (it can exceed the debounce delay and cause two fires instead of
+    # one), whereas five back-to-back calls take microseconds either way.
+    debouncer = Debouncer(delay=0.2)
     calls = []
 
     for _ in range(5):
         debouncer.schedule("same-key", lambda: calls.append(1))
-        time.sleep(0.02)  # well under the debounce delay
 
     debouncer.wait_idle(timeout=2.0)
 
