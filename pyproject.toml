@@ -6,6 +6,8 @@ requires-python = ">=3.10"
 dependencies = [
     "watchdog>=4.0",
     "pathspec>=0.12",
+    "fastembed>=0.5",
+    "sqlite-vec>=0.1",
 ]
 
 [project.optional-dependencies]
