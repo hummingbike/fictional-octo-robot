@@ -5,6 +5,7 @@ description = "Fast keyword/semantic search over second-brain text notes (txt/md
 requires-python = ">=3.10"
 dependencies = [
     "watchdog>=4.0",
+    "pathspec>=0.12",
 ]
 
 [project.optional-dependencies]
