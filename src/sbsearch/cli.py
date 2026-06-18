@@ -1,0 +1,165 @@
+"""sbsearch CLI: folder registration, indexing, search, and status (F1, F4, F7, F8)."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from sbsearch.config import (
+    DEFAULT_CONFIG_PATH,
+    add_exclude,
+    add_root,
+    load_config,
+    remove_exclude,
+    remove_root,
+    resolve_db_path,
+    save_config,
+)
+from sbsearch.indexer import index_roots, open_index
+from sbsearch.search import DEFAULT_CONTEXT_TOKENS, search
+from sbsearch.status import get_status
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="sbsearch", description="개빠름 메모검색")
+    parser.add_argument(
+        "--config", default=str(DEFAULT_CONFIG_PATH), help="config file path"
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    root_p = sub.add_parser("root", help="manage registered root folders (F1)")
+    root_sub = root_p.add_subparsers(dest="root_command", required=True)
+    root_add = root_sub.add_parser("add", help="register a folder to index")
+    root_add.add_argument("path")
+    root_remove = root_sub.add_parser("remove", help="unregister a folder")
+    root_remove.add_argument("path")
+    root_sub.add_parser("list", help="list registered folders")
+
+    exclude_p = sub.add_parser("exclude", help="manage .gitignore-style exclude patterns (F1)")
+    exclude_sub = exclude_p.add_subparsers(dest="exclude_command", required=True)
+    exclude_add = exclude_sub.add_parser("add", help="add an exclude pattern")
+    exclude_add.add_argument("pattern")
+    exclude_remove = exclude_sub.add_parser("remove", help="remove an exclude pattern")
+    exclude_remove.add_argument("pattern")
+    exclude_sub.add_parser("list", help="list exclude patterns")
+
+    sub.add_parser("index", help="build/refresh the full-text index from registered roots (F2)")
+
+    search_p = sub.add_parser("search", help="search the index (F4, F5)")
+    search_p.add_argument("query")
+    search_p.add_argument("--limit", type=int, default=20, help="max results (F7)")
+    search_p.add_argument(
+        "-C",
+        "--context",
+        type=int,
+        default=DEFAULT_CONTEXT_TOKENS,
+        help="snippet context size in tokens, like grep -C (F7)",
+    )
+    search_p.add_argument("--json", action="store_true", dest="as_json", help="output JSON (F7)")
+
+    sub.add_parser("status", help="show index status (F8)")
+
+    return parser
+
+
+def _cmd_root(args: argparse.Namespace, config_path: Path) -> int:
+    config = load_config(config_path)
+    if args.root_command == "add":
+        add_root(config, args.path)
+        save_config(config, config_path)
+        print(f"added root: {Path(args.path).resolve()}")
+    elif args.root_command == "remove":
+        remove_root(config, args.path)
+        save_config(config, config_path)
+        print(f"removed root: {Path(args.path).resolve()}")
+    else:  # list
+        for r in config.roots:
+            print(r)
+    return 0
+
+
+def _cmd_exclude(args: argparse.Namespace, config_path: Path) -> int:
+    config = load_config(config_path)
+    if args.exclude_command == "add":
+        add_exclude(config, args.pattern)
+        save_config(config, config_path)
+        print(f"added exclude pattern: {args.pattern}")
+    elif args.exclude_command == "remove":
+        remove_exclude(config, args.pattern)
+        save_config(config, config_path)
+        print(f"removed exclude pattern: {args.pattern}")
+    else:  # list
+        for p in config.exclude_patterns:
+            print(p)
+    return 0
+
+
+def _cmd_index(config_path: Path) -> int:
+    config = load_config(config_path)
+    db_path = resolve_db_path(config, config_path)
+    con = open_index(db_path)
+    count = index_roots(
+        con, [Path(r) for r in config.roots], exclude_patterns=config.exclude_patterns
+    )
+    print(f"indexed {count} files into {db_path}")
+    return 0
+
+
+def _cmd_search(args: argparse.Namespace, config_path: Path) -> int:
+    config = load_config(config_path)
+    db_path = resolve_db_path(config, config_path)
+    con = open_index(db_path)
+    results = search(con, args.query, limit=args.limit, context_tokens=args.context)
+
+    if args.as_json:
+        print(json.dumps([r.__dict__ for r in results], ensure_ascii=False))
+    else:
+        for r in results:
+            print(f"{r.path}\n  {r.snippet}\n")
+    return 0
+
+
+def _cmd_status(config_path: Path) -> int:
+    config = load_config(config_path)
+    db_path = resolve_db_path(config, config_path)
+    con = open_index(db_path)
+    status = get_status(con, db_path)
+
+    last_indexed = (
+        datetime.fromtimestamp(status.last_indexed, tz=timezone.utc).isoformat()
+        if status.last_indexed is not None
+        else None
+    )
+    payload = {
+        "file_count": status.file_count,
+        "last_indexed": last_indexed,
+        "db_size_bytes": status.db_size_bytes,
+        "db_path": str(db_path),
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    config_path = Path(args.config)
+
+    if args.command == "root":
+        return _cmd_root(args, config_path)
+    if args.command == "exclude":
+        return _cmd_exclude(args, config_path)
+    if args.command == "index":
+        return _cmd_index(config_path)
+    if args.command == "search":
+        return _cmd_search(args, config_path)
+    if args.command == "status":
+        return _cmd_status(config_path)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
