@@ -81,10 +81,10 @@ CREATE TABLE chunks (
 - [x] CLI 래핑 (F4, F7): `sbsearch.cli` — `root`/`exclude`/`index`/`search`/`status` 서브커맨드. `search`는 plain/json 출력, `--limit`, `-C`(FTS5 snippet 토큰 기준 컨텍스트) 지원.
 - [x] `status` 명령 (F8): `sbsearch.status.get_status` — 색인 파일 수, 마지막 색인 파일의 mtime, 인덱스 파일 크기(WAL/SHM 포함).
 
-### Phase 2 — 실시간 증분 색인
-- FSEvents 구독 데몬(`watch` 서브커맨드 or launchd 등록) (F3).
-- 생성/수정/삭제/이동 각각에 대한 인덱스 갱신 로직 + 멀티 이벤트 디바운싱.
-- 비정상 종료 후 재시작 시 일관성 복구(파일 mtime/hash 비교로 누락분 재색인).
+### Phase 2 — 실시간 증분 색인 ✅ 완료 (2026-06-18)
+- [x] FSEvents 구독 데몬(`watch` 서브커맨드) (F3): `sbsearch.watcher.IndexWatcher` — `watchdog.Observer`를 루트별로 구독, 등록 폴더는 `.resolve()` 후 전달.
+- [x] 생성/수정/삭제/이동 각각에 대한 인덱스 갱신 로직 + 멀티 이벤트 디바운싱: `_RootEventHandler` + `Debouncer`(경로별 `threading.Timer` 코얼레싱, 기본 0.3초).
+- [x] 비정상 종료 후 재시작 시 일관성 복구(파일 mtime/hash 비교로 누락분 재색인): `sbsearch.indexer.reconcile_roots` — `watch`/`index` 커맨드 시작 시 항상 실행. launchd 등록을 통한 상시 실행 자동화는 미구현(운영 설정 영역으로 보류).
 
 ### Phase 3 — 시맨틱 검색
 - 청크 분할 전략 결정(고정 길이 vs 문단 단위).

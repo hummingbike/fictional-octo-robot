@@ -19,12 +19,12 @@
 - [x] `status` 서브커맨드: 색인 파일 수 / 마지막 갱신 시각 / 인덱스 크기 — `sbsearch.status.get_status`
 - [x] plain/json 출력 옵션, `--limit`, `-C`(컨텍스트 줄 수) — `sbsearch search --json --limit N -C N` (FTS5 snippet 토큰 기준 컨텍스트)
 
-## Phase 2 — 실시간 증분 색인
-- [ ] `watch` 서브커맨드: FSEvents 구독 데몬 (등록 폴더 경로는 반드시 `.resolve()` 후 watchdog에 전달 — Phase 0에서 발견한 심볼릭 링크 버그 참고)
-- [ ] 생성/수정/삭제/이동 이벤트별 인덱스 갱신 로직
-- [ ] 다중 이벤트 디바운싱 (짧은 시간 내 동일 파일 다중 변경 처리)
-- [ ] 비정상 종료 후 재시작 시 정합성 복구 (mtime/hash 비교)
-- [ ] 주기적 정합성 검사(백그라운드) 추가 검토
+## Phase 2 — 실시간 증분 색인 ✅ 완료 (2026-06-18)
+- [x] `watch` 서브커맨드: FSEvents 구독 데몬 (등록 폴더 경로는 반드시 `.resolve()` 후 watchdog에 전달 — Phase 0에서 발견한 심볼릭 링크 버그 참고) — `sbsearch.watcher.IndexWatcher`, CLI `sbsearch watch [--timeout N]`
+- [x] 생성/수정/삭제/이동 이벤트별 인덱스 갱신 로직 — `_RootEventHandler` (on_created/on_modified → 재색인, on_deleted → 제거, on_moved → 이전 경로 제거 + 새 경로 재색인)
+- [x] 다중 이벤트 디바운싱 (짧은 시간 내 동일 파일 다중 변경 처리) — `sbsearch.watcher.Debouncer` (경로별 타이머 코얼레싱)
+- [x] 비정상 종료 후 재시작 시 정합성 복구 (mtime/hash 비교) — `sbsearch.indexer.reconcile_roots` (변경분 재색인 + 삭제된 파일의 잔존 인덱스 항목 제거), `watch`/`index` 커맨드 모두 시작 시 호출
+- [ ] 주기적 정합성 검사(백그라운드) 추가 검토 — `reconcile_roots`는 이미 구현되어 `sbsearch index`를 cron/launchd로 주기 실행하면 충족 가능하지만, 자동 스케줄링(launchd plist 등) 자체는 미구현. 필요성이 확인되면 Phase 4에서 다룸
 
 ## Phase 3 — 시맨틱 검색
 - [ ] 청크 분할 전략 결정 및 구현

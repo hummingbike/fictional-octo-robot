@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,9 +19,10 @@ from sbsearch.config import (
     resolve_db_path,
     save_config,
 )
-from sbsearch.indexer import index_roots, open_index
+from sbsearch.indexer import open_index, reconcile_roots
 from sbsearch.search import DEFAULT_CONTEXT_TOKENS, search
 from sbsearch.status import get_status
+from sbsearch.watcher import DEFAULT_DEBOUNCE_SECONDS, IndexWatcher
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -46,7 +48,19 @@ def _build_parser() -> argparse.ArgumentParser:
     exclude_remove.add_argument("pattern")
     exclude_sub.add_parser("list", help="list exclude patterns")
 
-    sub.add_parser("index", help="build/refresh the full-text index from registered roots (F2)")
+    sub.add_parser(
+        "index", help="build/refresh the full-text index from registered roots (F2)"
+    )
+
+    watch_p = sub.add_parser(
+        "watch", help="watch registered roots and keep the index in sync (F3)"
+    )
+    watch_p.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="stop after N seconds (omit to run until Ctrl+C)",
+    )
 
     search_p = sub.add_parser("search", help="search the index (F4, F5)")
     search_p.add_argument("query")
@@ -101,10 +115,48 @@ def _cmd_index(config_path: Path) -> int:
     config = load_config(config_path)
     db_path = resolve_db_path(config, config_path)
     con = open_index(db_path)
-    count = index_roots(
+    result = reconcile_roots(
         con, [Path(r) for r in config.roots], exclude_patterns=config.exclude_patterns
     )
-    print(f"indexed {count} files into {db_path}")
+    print(
+        f"indexed {result.indexed} files into {db_path} "
+        f"(removed {result.removed} stale entries)"
+    )
+    return 0
+
+
+def _cmd_watch(args: argparse.Namespace, config_path: Path) -> int:
+    config = load_config(config_path)
+    if not config.roots:
+        print("no roots registered; use `sbsearch root add <path>` first")
+        return 1
+
+    db_path = resolve_db_path(config, config_path)
+    con = open_index(db_path, check_same_thread=False)
+
+    result = reconcile_roots(
+        con, [Path(r) for r in config.roots], exclude_patterns=config.exclude_patterns
+    )
+    print(f"reconciled: indexed {result.indexed}, removed {result.removed} stale entries")
+
+    watcher = IndexWatcher(
+        con,
+        [Path(r) for r in config.roots],
+        exclude_patterns=config.exclude_patterns,
+        debounce_seconds=DEFAULT_DEBOUNCE_SECONDS,
+    )
+    watcher.start()
+    print(f"watching {len(config.roots)} root(s) for changes (Ctrl+C to stop)...")
+    try:
+        if args.timeout is not None:
+            time.sleep(args.timeout)
+        else:
+            while True:
+                time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        watcher.stop()
     return 0
 
 
@@ -154,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_exclude(args, config_path)
     if args.command == "index":
         return _cmd_index(config_path)
+    if args.command == "watch":
+        return _cmd_watch(args, config_path)
     if args.command == "search":
         return _cmd_search(args, config_path)
     if args.command == "status":

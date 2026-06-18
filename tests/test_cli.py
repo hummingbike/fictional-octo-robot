@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 
 from sbsearch.cli import main
 
@@ -114,6 +116,65 @@ def test_search_limit_option(tmp_path, capsys):
     results = json.loads(capsys.readouterr().out)
 
     assert len(results) == 2
+
+
+def test_index_removes_entries_for_deleted_files(tmp_path, capsys):
+    config_path = _config_path(tmp_path)
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    keep = folder / "keep.txt"
+    gone = folder / "gone.txt"
+    keep.write_text("keep me")
+    gone.write_text("delete me")
+
+    main(["--config", config_path, "root", "add", str(folder)])
+    capsys.readouterr()
+    main(["--config", config_path, "index"])
+    first_output = capsys.readouterr().out
+    assert "indexed 2 files" in first_output
+
+    gone.unlink()
+    main(["--config", config_path, "index"])
+    second_output = capsys.readouterr().out
+    assert "indexed 1 files" in second_output  # keep.txt still walked/processed
+    assert "removed 1 stale entries" in second_output  # gone.txt's stale entry dropped
+
+    main(["--config", config_path, "status"])
+    status = json.loads(capsys.readouterr().out)
+    assert status["file_count"] == 1
+
+
+def test_watch_with_timeout_indexes_newly_created_file(tmp_path, capsys):
+    config_path = _config_path(tmp_path)
+    folder = tmp_path / "notes"
+    folder.mkdir()
+
+    main(["--config", config_path, "root", "add", str(folder)])
+    capsys.readouterr()
+
+    def write_after_delay():
+        time.sleep(0.3)
+        (folder / "new.txt").write_text("hello fox")
+
+    writer = threading.Thread(target=write_after_delay)
+    writer.start()
+    main(["--config", config_path, "watch", "--timeout", "2.0"])
+    writer.join()
+    capsys.readouterr()
+
+    main(["--config", config_path, "search", "fox", "--json"])
+    results = json.loads(capsys.readouterr().out)
+    assert len(results) == 1
+    assert results[0]["path"].endswith("new.txt")
+
+
+def test_watch_without_roots_returns_error(tmp_path, capsys):
+    config_path = _config_path(tmp_path)
+
+    exit_code = main(["--config", config_path, "watch", "--timeout", "0.1"])
+
+    assert exit_code == 1
+    assert "no roots registered" in capsys.readouterr().out
 
 
 def test_status_reports_file_count(tmp_path, capsys):
