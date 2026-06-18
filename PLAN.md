@@ -74,12 +74,12 @@ CREATE TABLE chunks (
 - [ ] 후보 임베딩 모델 2~3개로 색인 속도/검색 품질 비교 → **Phase 3로 연기**: `sentence-transformers` 등은 torch 의존성이 무거워(수백MB~GB) 스파이크 범위에서 제외, 모델 선정은 Phase 3 착수 시점에 별도로 진행.
 - **출력물**: 실측 수치로 PRD 7~8장 보정 완료. 부산물로 `sbsearch.indexer`/`sbsearch.search` 핵심 로직이 이미 구현되어 Phase 1로 그대로 이어짐 (아래 참고).
 
-### Phase 1 — 키워드 검색 MVP
+### Phase 1 — 키워드 검색 MVP ✅ 완료 (2026-06-18)
 - [x] FTS5 인덱서 (F2 핵심 로직): `sbsearch.indexer.index_directory`/`index_file`/`remove_file` — Phase 0 스파이크에서 선구현, 단위테스트 포함.
 - [x] 검색 (F4 핵심 로직, F5): `sbsearch.search.search` — FTS5 MATCH 문법을 그대로 노출해 AND/OR/NOT/구문검색 지원, 단위테스트 포함.
-- [ ] 폴더 등록/제외 패턴 설정 (F1) — 아직 미구현, 현재는 `index_directory(root)`에 루트 하나만 전달 가능.
-- [ ] CLI 래핑 (F4, F7): `sbsearch search "키워드"` 서브커맨드, plain/json 출력, `--limit`/`-C`.
-- [ ] `status` 명령 (F8).
+- [x] 폴더 등록/제외 패턴 설정 (F1): `sbsearch.config`(JSON 영속화, root/exclude add·remove) + `sbsearch.excludes`(`pathspec` `gitignore` 매처) + `sbsearch.indexer.index_roots`(다중 루트 색인).
+- [x] CLI 래핑 (F4, F7): `sbsearch.cli` — `root`/`exclude`/`index`/`search`/`status` 서브커맨드. `search`는 plain/json 출력, `--limit`, `-C`(FTS5 snippet 토큰 기준 컨텍스트) 지원.
+- [x] `status` 명령 (F8): `sbsearch.status.get_status` — 색인 파일 수, 마지막 색인 파일의 mtime, 인덱스 파일 크기(WAL/SHM 포함).
 
 ### Phase 2 — 실시간 증분 색인
 - FSEvents 구독 데몬(`watch` 서브커맨드 or launchd 등록) (F3).

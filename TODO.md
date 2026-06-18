@@ -10,14 +10,14 @@
 - [ ] 임베딩 모델 후보 2~3개 비교 — **Phase 3로 연기** (torch 등 무거운 의존성, 스파이크 범위에서 제외)
 - [x] 실측 결과로 PRD.md 7~8장 수치 보정
 
-## Phase 1 — 키워드 검색 MVP
+## Phase 1 — 키워드 검색 MVP ✅ 완료 (2026-06-18)
 - [x] 프로젝트 스캐폴딩 (Python 패키지 구조, `pyproject.toml`, pytest) — Phase 0에서 선구현
 - [x] FTS5 인덱서 핵심 로직 (`sbsearch.indexer`) — Phase 0에서 선구현, 단위테스트 포함
 - [x] 검색 핵심 로직 + BM25 랭킹 + 검색 연산자 (`sbsearch.search`, FTS5 MATCH 문법 그대로 노출) — Phase 0에서 선구현
-- [ ] 폴더 등록/제외 패턴 설정 기능 (`.gitignore` 스타일) — 미구현, 현재는 단일 루트 경로만 지원
-- [ ] CLI 엔트리포인트 + `search` 서브커맨드 (`sbsearch search "키워드"`)
-- [ ] `status` 서브커맨드: 색인 파일 수 / 마지막 갱신 시각 / 인덱스 크기
-- [ ] plain/json 출력 옵션, `--limit`, `-C`(컨텍스트 줄 수)
+- [x] 폴더 등록/제외 패턴 설정 기능 (`.gitignore` 스타일) — `sbsearch.config`(등록/제외 패턴 영속화) + `sbsearch.excludes`(`pathspec` 기반 매칭) + `sbsearch.indexer.index_roots`(다중 루트 색인)
+- [x] CLI 엔트리포인트 + `search` 서브커맨드 (`sbsearch search "키워드"`) — `sbsearch.cli`, `root`/`exclude`/`index`/`search`/`status` 서브커맨드
+- [x] `status` 서브커맨드: 색인 파일 수 / 마지막 갱신 시각 / 인덱스 크기 — `sbsearch.status.get_status`
+- [x] plain/json 출력 옵션, `--limit`, `-C`(컨텍스트 줄 수) — `sbsearch search --json --limit N -C N` (FTS5 snippet 토큰 기준 컨텍스트)
 
 ## Phase 2 — 실시간 증분 색인
 - [ ] `watch` 서브커맨드: FSEvents 구독 데몬 (등록 폴더 경로는 반드시 `.resolve()` 후 watchdog에 전달 — Phase 0에서 발견한 심볼릭 링크 버그 참고)
