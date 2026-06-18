@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -28,10 +29,15 @@ CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
 """
 
 
-def open_index(db_path: str | Path) -> sqlite3.Connection:
-    """Open (creating if needed) the FTS5 index database at `db_path`."""
+def open_index(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open (creating if needed) the FTS5 index database at `db_path`.
+
+    `check_same_thread=False` is needed by the watcher (F3), whose debounced
+    re-index calls run on timer threads rather than the thread that opened
+    the connection; callers doing that must serialize writes themselves.
+    """
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(db_path)
+    con = sqlite3.connect(db_path, check_same_thread=check_same_thread)
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(_SCHEMA)
     return con
@@ -115,3 +121,34 @@ def index_roots(
 
 def file_count(con: sqlite3.Connection) -> int:
     return con.execute("SELECT count(*) FROM files_fts").fetchone()[0]
+
+
+@dataclass
+class ReconcileResult:
+    indexed: int  # new or changed files (re)indexed
+    removed: int  # stale entries removed (file no longer exists on disk)
+
+
+def reconcile_roots(
+    con: sqlite3.Connection,
+    roots: Iterable[Path],
+    extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
+    exclude_patterns: tuple[str, ...] | list[str] | None = None,
+) -> ReconcileResult:
+    """Bring the index back in sync with the filesystem (F3 restart recovery).
+
+    Re-walks `roots` (index_file's hash check makes this a no-op for files
+    that haven't changed) and removes index entries whose file no longer
+    exists -- covering deletes/moves that happened while no watcher was
+    running, e.g. after a crash or before the first `watch` invocation.
+    """
+    indexed = index_roots(con, roots, extensions, exclude_patterns)
+
+    removed = 0
+    for (path_str,) in con.execute("SELECT path FROM files_fts").fetchall():
+        if not Path(path_str).exists():
+            remove_file(con, path_str)
+            removed += 1
+    con.commit()
+
+    return ReconcileResult(indexed=indexed, removed=removed)

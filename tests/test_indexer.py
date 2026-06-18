@@ -4,6 +4,7 @@ from sbsearch.indexer import (
     index_file,
     index_roots,
     open_index,
+    reconcile_roots,
     remove_file,
 )
 
@@ -116,6 +117,68 @@ def test_index_roots_indexes_each_root(tmp_path):
 
     assert count == 2
     assert file_count(con) == 2
+
+
+def test_open_index_allows_use_from_another_thread(tmp_path):
+    import threading
+
+    db_path = tmp_path / "index.db"
+    con = open_index(db_path, check_same_thread=False)
+    errors = []
+
+    def write_from_other_thread():
+        try:
+            f = tmp_path / "note.txt"
+            f.write_text("from another thread")
+            index_file(con, f)
+            con.commit()
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    t = threading.Thread(target=write_from_other_thread)
+    t.start()
+    t.join()
+
+    assert errors == []
+    assert file_count(con) == 1
+
+
+def test_reconcile_roots_indexes_new_and_changed_files(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("original")
+    con = open_index(tmp_path / "index.db")
+    index_directory(con, root)
+
+    (root / "a.txt").write_text("changed")
+    (root / "b.txt").write_text("new file")
+
+    result = reconcile_roots(con, [root])
+
+    assert result.indexed == 2  # a.txt re-indexed (changed), b.txt newly indexed
+    assert result.removed == 0
+    assert file_count(con) == 2
+
+
+def test_reconcile_roots_removes_entries_for_deleted_files(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    keep = root / "keep.txt"
+    gone = root / "gone.txt"
+    keep.write_text("keep me")
+    gone.write_text("delete me")
+    con = open_index(tmp_path / "index.db")
+    index_directory(con, root)
+    assert file_count(con) == 2
+
+    gone.unlink()
+
+    result = reconcile_roots(con, [root])
+
+    assert result.removed == 1
+    assert file_count(con) == 1
+    row = con.execute("SELECT path FROM files_fts").fetchone()
+    assert row[0] == str(keep)
 
 
 def test_index_roots_applies_excludes_to_every_root(tmp_path):
