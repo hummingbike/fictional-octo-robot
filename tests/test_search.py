@@ -83,3 +83,17 @@ def test_search_snippet_highlights_match(tmp_path):
     results = search(con, "fox")
 
     assert ">>>fox<<<" in results[0].snippet
+
+
+def test_search_context_tokens_limits_snippet_width(tmp_path):
+    con = _indexed(
+        tmp_path,
+        {"alpha.txt": "one two three four needle six seven eight nine ten"},
+    )
+
+    narrow = search(con, "needle", context_tokens=1)[0].snippet
+    wide = search(con, "needle", context_tokens=10)[0].snippet
+
+    assert len(narrow) < len(wide)
+    assert ">>>needle<<<" in narrow
+    assert ">>>needle<<<" in wide
