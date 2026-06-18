@@ -177,6 +177,42 @@ def test_watch_without_roots_returns_error(tmp_path, capsys):
     assert "no roots registered" in capsys.readouterr().out
 
 
+def test_index_semantic_then_search_semantic(tmp_path, capsys):
+    config_path = _config_path(tmp_path)
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "budget.txt").write_text("이번 분기 예산 계획을 검토했다")
+    (folder / "lunch.txt").write_text("점심으로 김치찌개를 먹었다")
+
+    main(["--config", config_path, "root", "add", str(folder)])
+    capsys.readouterr()
+
+    main(["--config", config_path, "index", "--semantic"])
+    index_output = capsys.readouterr().out
+    assert "semantic: indexed 2 files" in index_output
+
+    main(["--config", config_path, "search", "오늘 회의에서 예산안을 논의했다", "--semantic", "--json"])
+    results = json.loads(capsys.readouterr().out)
+
+    assert results[0]["path"].endswith("budget.txt")
+
+
+def test_search_semantic_with_no_semantic_index_returns_empty(tmp_path, capsys):
+    config_path = _config_path(tmp_path)
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "a.txt").write_text("some note content")
+    main(["--config", config_path, "root", "add", str(folder)])
+    capsys.readouterr()
+    main(["--config", config_path, "index"])  # keyword-only, no --semantic
+    capsys.readouterr()
+
+    main(["--config", config_path, "search", "anything", "--semantic", "--json"])
+    results = json.loads(capsys.readouterr().out)
+
+    assert results == []
+
+
 def test_status_reports_file_count(tmp_path, capsys):
     config_path = _config_path(tmp_path)
     folder = tmp_path / "notes"

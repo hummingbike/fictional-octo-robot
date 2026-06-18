@@ -32,7 +32,7 @@
 | 언어 | Python 3.11+ | 파일시스템 워처, FTS, 임베딩 생태계가 모두 성숙. 개인 규모(수만 파일) 트래픽에서 성능 병목이 거의 인덱스/IO이지 언어 자체가 아님. CLI 배포는 `uv`/`pipx`로 단일 명령 설치 |
 | 전문 검색 인덱스 | SQLite **FTS5** | 별도 서버 불필요(파일 1개), BM25 랭킹 내장, 트랜잭션으로 일관성 보장, Python 표준 `sqlite3`로 의존성 최소화 |
 | 파일시스템 감시 (macOS) | `watchdog` 라이브러리 (내부적으로 FSEvents 사용) | FSEvents를 직접 바인딩하는 대신 성숙한 래퍼 사용, 추후 Linux(inotify) 백엔드도 동일 라이브러리로 커버 가능 → 이식성 확보 |
-| 임베딩(시맨틱 검색) | 로컬 모델, 1차로 `sentence-transformers` (예: `all-MiniLM-L6-v2`) 또는 Ollama embedding 모델 중 Phase 3에서 벤치마크 후 결정 | 프라이버시(개인 메모 외부 전송 금지) + 오프라인 동작 요구 |
+| 임베딩(시맨틱 검색) | **결정 (Phase 3)**: `fastembed`(ONNX Runtime) + `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`(384차원, ~220MB) | `sentence-transformers`+torch는 Phase 0에서 무거운 의존성으로 배제, Ollama는 별도 서버 설치/실행이 필요해 이 환경에서 사용 불가 확인. fastembed는 ONNX 기반으로 torch 없이 순수 Python 의존성만으로 동작, 모델이 한국어를 포함한 다국어를 지원해 이 프로젝트의 메모(한국어) 검색에 적합. 프라이버시(외부 전송 없음) + 오프라인 동작 요구 충족 |
 | 벡터 저장 | SQLite `sqlite-vec` 확장 (FTS5와 같은 DB 파일에 공존) | 별도 벡터DB 프로세스 없이 단일 인덱스 파일로 운영 단순화. 규모가 커지면 Phase 4에서 대안(Faiss 등) 검토 |
 | CLI 프레임워크 | `typer` 또는 `argparse` | 가벼운 CLI, 서브커맨드(`index`, `watch`, `search`, `status`) 구성 용이 |
 
@@ -86,10 +86,12 @@ CREATE TABLE chunks (
 - [x] 생성/수정/삭제/이동 각각에 대한 인덱스 갱신 로직 + 멀티 이벤트 디바운싱: `_RootEventHandler` + `Debouncer`(경로별 `threading.Timer` 코얼레싱, 기본 0.3초).
 - [x] 비정상 종료 후 재시작 시 일관성 복구(파일 mtime/hash 비교로 누락분 재색인): `sbsearch.indexer.reconcile_roots` — `watch`/`index` 커맨드 시작 시 항상 실행. launchd 등록을 통한 상시 실행 자동화는 미구현(운영 설정 영역으로 보류).
 
-### Phase 3 — 시맨틱 검색
-- 청크 분할 전략 결정(고정 길이 vs 문단 단위).
-- 로컬 임베딩 모델 확정, 색인 시 청크 임베딩 생성·저장.
-- `--semantic` 검색 모드: 쿼리 임베딩 → 벡터 유사도 검색 → 결과 병합/표시.
+### Phase 3 — 시맨틱 검색 ✅ 완료 (2026-06-18)
+- [x] 청크 분할 전략 결정(고정 길이 vs 문단 단위): 문단 단위로 결정 — `sbsearch.chunking.chunk_text`가 문단을 최대한 통째로 유지하며 `max_chars`까지 묶고, 문단 하나가 초과하는 경우에만 오버랩을 둔 고정 길이로 분할.
+- [x] 로컬 임베딩 모델 확정, 색인 시 청크 임베딩 생성·저장: `sbsearch.embeddings.LocalEmbedder`(fastembed) + `sbsearch.semantic.index_file_semantic`(`sbsearch index --semantic`에서 호출, 파일 단위 content-hash로 변경분만 재임베딩).
+- [x] `sqlite-vec` 기반 벡터 저장/조회: `sbsearch.semantic.enable_vector_search`(`chunks` 메타데이터 테이블 + `chunk_vectors` vec0 가상 테이블, cosine distance).
+- [x] `--semantic` 검색 모드: `sbsearch search --semantic` — 쿼리 임베딩 → `chunk_vectors` kNN 조회.
+- [x] 키워드 검색 결과와 시맨틱 결과 병합/표시 전략 결정: **병합하지 않음** — BM25 랭크와 코사인 유사도는 척도가 달라 직접 비교/가중합이 의미 없고, RAG 답변 생성(비목표)이 없어 가중치를 학습할 랭커도 없음. `--semantic`은 검색 백엔드를 전환하는 별도 모드로 동작(동일 `--limit`/`--json` 출력 형식 공유).
 
 ### Phase 4 — 다듬기 / 확장 (옵션)
 - JSON 출력, 성능 튜닝(대용량 log 파일 스트리밍 파싱).
