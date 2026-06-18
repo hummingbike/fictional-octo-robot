@@ -2,6 +2,7 @@ from sbsearch.indexer import (
     file_count,
     index_directory,
     index_file,
+    index_roots,
     open_index,
     remove_file,
 )
@@ -77,3 +78,57 @@ def test_remove_file_deletes_from_index(tmp_path):
 def test_remove_file_returns_false_when_not_indexed(tmp_path):
     con = open_index(tmp_path / "index.db")
     assert remove_file(con, tmp_path / "missing.txt") is False
+
+
+def test_open_index_creates_missing_parent_directory(tmp_path):
+    db_path = tmp_path / "nested" / "deeper" / "index.db"
+
+    con = open_index(db_path)
+
+    assert db_path.parent.is_dir()
+    assert file_count(con) == 0
+
+
+def test_index_directory_skips_excluded_files(tmp_path):
+    (tmp_path / "keep.md").write_text("keep me")
+    drafts = tmp_path / "drafts"
+    drafts.mkdir()
+    (drafts / "wip.md").write_text("work in progress")
+
+    con = open_index(tmp_path / "index.db")
+    count = index_directory(con, tmp_path, exclude_patterns=["drafts/"])
+
+    assert count == 1
+    row = con.execute("SELECT path FROM files_fts").fetchone()
+    assert row[0] == str(tmp_path / "keep.md")
+
+
+def test_index_roots_indexes_each_root(tmp_path):
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+    (root_a / "one.txt").write_text("one")
+    (root_b / "two.txt").write_text("two")
+
+    con = open_index(tmp_path / "index.db")
+    count = index_roots(con, [root_a, root_b])
+
+    assert count == 2
+    assert file_count(con) == 2
+
+
+def test_index_roots_applies_excludes_to_every_root(tmp_path):
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+    (root_a / "keep.txt").write_text("keep")
+    (root_a / "skip.tmp.txt").write_text("skip")
+    (root_b / "keep.txt").write_text("keep")
+
+    con = open_index(tmp_path / "index.db")
+    count = index_roots(con, [root_a, root_b], exclude_patterns=["skip.tmp.*"])
+
+    assert count == 2
+    assert file_count(con) == 2

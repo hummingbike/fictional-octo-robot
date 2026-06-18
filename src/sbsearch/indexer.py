@@ -10,6 +10,9 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from pathlib import Path
+from typing import Iterable
+
+from sbsearch.excludes import build_pathspec, is_excluded
 
 DEFAULT_EXTENSIONS = (".txt", ".md", ".log")
 
@@ -27,6 +30,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
 
 def open_index(db_path: str | Path) -> sqlite3.Connection:
     """Open (creating if needed) the FTS5 index database at `db_path`."""
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db_path)
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(_SCHEMA)
@@ -77,18 +81,36 @@ def index_directory(
     con: sqlite3.Connection,
     root: Path,
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
+    exclude_patterns: tuple[str, ...] | list[str] | None = None,
 ) -> int:
     """Walk `root` and index every file matching `extensions`.
 
-    Commits once at the end. Returns the number of files processed.
+    Files matching `exclude_patterns` (.gitignore-style, relative to `root`)
+    are skipped. Commits once at the end. Returns the number of files processed.
     """
+    spec = build_pathspec(exclude_patterns) if exclude_patterns else None
     count = 0
     for path in sorted(root.rglob("*")):
-        if path.is_file() and path.suffix in extensions:
-            index_file(con, path)
-            count += 1
+        if not path.is_file() or path.suffix not in extensions:
+            continue
+        if spec is not None and is_excluded(spec, root, path):
+            continue
+        index_file(con, path)
+        count += 1
     con.commit()
     return count
+
+
+def index_roots(
+    con: sqlite3.Connection,
+    roots: Iterable[Path],
+    extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
+    exclude_patterns: tuple[str, ...] | list[str] | None = None,
+) -> int:
+    """Index multiple root folders (F1), applying the same exclude patterns to each."""
+    return sum(
+        index_directory(con, root, extensions, exclude_patterns) for root in roots
+    )
 
 
 def file_count(con: sqlite3.Connection) -> int:

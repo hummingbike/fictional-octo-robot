@@ -5,12 +5,16 @@ description = "Fast keyword/semantic search over second-brain text notes (txt/md
 requires-python = ">=3.10"
 dependencies = [
     "watchdog>=4.0",
+    "pathspec>=0.12",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
 ]
+
+[project.scripts]
+sbsearch = "sbsearch.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
