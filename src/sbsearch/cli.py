@@ -1,4 +1,4 @@
-"""sbsearch CLI: folder registration, indexing, search, and status (F1, F4, F7, F8)."""
+"""sbsearch CLI: folder registration, indexing, search, status, semantic mode (F1, F4, F6, F7, F8)."""
 
 from __future__ import annotations
 
@@ -48,8 +48,14 @@ def _build_parser() -> argparse.ArgumentParser:
     exclude_remove.add_argument("pattern")
     exclude_sub.add_parser("list", help="list exclude patterns")
 
-    sub.add_parser(
+    index_p = sub.add_parser(
         "index", help="build/refresh the full-text index from registered roots (F2)"
+    )
+    index_p.add_argument(
+        "--semantic",
+        action="store_true",
+        dest="as_semantic",
+        help="also build/refresh the semantic (embedding) index (F6)",
     )
 
     watch_p = sub.add_parser(
@@ -73,6 +79,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="snippet context size in tokens, like grep -C (F7)",
     )
     search_p.add_argument("--json", action="store_true", dest="as_json", help="output JSON (F7)")
+    search_p.add_argument(
+        "--semantic",
+        action="store_true",
+        dest="as_semantic",
+        help="semantic (embedding similarity) search instead of keyword FTS5 (F6)",
+    )
 
     sub.add_parser("status", help="show index status (F8)")
 
@@ -111,7 +123,7 @@ def _cmd_exclude(args: argparse.Namespace, config_path: Path) -> int:
     return 0
 
 
-def _cmd_index(config_path: Path) -> int:
+def _cmd_index(args: argparse.Namespace, config_path: Path) -> int:
     config = load_config(config_path)
     db_path = resolve_db_path(config, config_path)
     con = open_index(db_path)
@@ -122,6 +134,23 @@ def _cmd_index(config_path: Path) -> int:
         f"indexed {result.indexed} files into {db_path} "
         f"(removed {result.removed} stale entries)"
     )
+
+    if args.as_semantic:
+        from sbsearch.embeddings import LocalEmbedder
+        from sbsearch.semantic import enable_vector_search, reconcile_roots_semantic
+
+        enable_vector_search(con)
+        embedder = LocalEmbedder()
+        semantic_result = reconcile_roots_semantic(
+            con,
+            [Path(r) for r in config.roots],
+            embedder,
+            exclude_patterns=config.exclude_patterns,
+        )
+        print(
+            f"semantic: indexed {semantic_result.indexed} files "
+            f"(removed {semantic_result.removed} stale entries)"
+        )
     return 0
 
 
@@ -164,7 +193,16 @@ def _cmd_search(args: argparse.Namespace, config_path: Path) -> int:
     config = load_config(config_path)
     db_path = resolve_db_path(config, config_path)
     con = open_index(db_path)
-    results = search(con, args.query, limit=args.limit, context_tokens=args.context)
+
+    if args.as_semantic:
+        from sbsearch.embeddings import LocalEmbedder
+        from sbsearch.semantic import enable_vector_search, semantic_search
+
+        enable_vector_search(con)
+        embedder = LocalEmbedder()
+        results = semantic_search(con, args.query, embedder, limit=args.limit)
+    else:
+        results = search(con, args.query, limit=args.limit, context_tokens=args.context)
 
     if args.as_json:
         print(json.dumps([r.__dict__ for r in results], ensure_ascii=False))
@@ -205,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "exclude":
         return _cmd_exclude(args, config_path)
     if args.command == "index":
-        return _cmd_index(config_path)
+        return _cmd_index(args, config_path)
     if args.command == "watch":
         return _cmd_watch(args, config_path)
     if args.command == "search":

@@ -9,6 +9,7 @@ not the English-only model PLAN.md originally sketched.
 
 from __future__ import annotations
 
+import warnings
 from typing import Iterable
 
 DEFAULT_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -22,7 +23,10 @@ class LocalEmbedder:
         from fastembed import TextEmbedding  # heavy import, deferred until needed
 
         self.model_name = model_name
-        self._model = TextEmbedding(model_name=model_name)
+        with warnings.catch_warnings():
+            # fastembed's own pooling-strategy notice; not actionable for callers.
+            warnings.filterwarnings("ignore", message="The model .* now uses mean pooling")
+            self._model = TextEmbedding(model_name=model_name)
 
     def embed(self, texts: Iterable[str]) -> list[list[float]]:
         return [vector.tolist() for vector in self._model.embed(list(texts))]
