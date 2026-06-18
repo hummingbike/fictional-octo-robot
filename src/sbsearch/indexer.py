@@ -11,7 +11,7 @@ import hashlib
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from sbsearch.excludes import build_pathspec, is_excluded
 
@@ -83,6 +83,25 @@ def remove_file(con: sqlite3.Connection, path: Path | str) -> bool:
     return cur.rowcount > 0
 
 
+def iter_matching_files(
+    root: Path,
+    extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
+    exclude_patterns: tuple[str, ...] | list[str] | None = None,
+) -> Iterator[Path]:
+    """Walk `root`, yielding files matching `extensions` and not excluded.
+
+    Shared by the keyword indexer and the semantic (chunk/embed) indexer so
+    both apply identical root/extension/exclude filtering (F1).
+    """
+    spec = build_pathspec(exclude_patterns) if exclude_patterns else None
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix not in extensions:
+            continue
+        if spec is not None and is_excluded(spec, root, path):
+            continue
+        yield path
+
+
 def index_directory(
     con: sqlite3.Connection,
     root: Path,
@@ -94,13 +113,8 @@ def index_directory(
     Files matching `exclude_patterns` (.gitignore-style, relative to `root`)
     are skipped. Commits once at the end. Returns the number of files processed.
     """
-    spec = build_pathspec(exclude_patterns) if exclude_patterns else None
     count = 0
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.suffix not in extensions:
-            continue
-        if spec is not None and is_excluded(spec, root, path):
-            continue
+    for path in iter_matching_files(root, extensions, exclude_patterns):
         index_file(con, path)
         count += 1
     con.commit()

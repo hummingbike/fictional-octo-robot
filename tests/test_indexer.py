@@ -3,6 +3,7 @@ from sbsearch.indexer import (
     index_directory,
     index_file,
     index_roots,
+    iter_matching_files,
     open_index,
     reconcile_roots,
     remove_file,
@@ -79,6 +80,18 @@ def test_remove_file_deletes_from_index(tmp_path):
 def test_remove_file_returns_false_when_not_indexed(tmp_path):
     con = open_index(tmp_path / "index.db")
     assert remove_file(con, tmp_path / "missing.txt") is False
+
+
+def test_iter_matching_files_filters_extensions_and_excludes(tmp_path):
+    (tmp_path / "keep.md").write_text("keep")
+    (tmp_path / "ignored.bin").write_text("ignored")
+    drafts = tmp_path / "drafts"
+    drafts.mkdir()
+    (drafts / "wip.md").write_text("wip")
+
+    found = list(iter_matching_files(tmp_path, exclude_patterns=["drafts/"]))
+
+    assert found == [tmp_path / "keep.md"]
 
 
 def test_open_index_creates_missing_parent_directory(tmp_path):
