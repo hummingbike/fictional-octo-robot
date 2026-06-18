@@ -25,10 +25,13 @@ jobs:
         # loadable extensions disabled, so sqlite3.Connection.enable_load_extension
         # doesn't exist -- breaking sqlite-vec (semantic search, F6). Homebrew's
         # python3 links against Homebrew's own libsqlite3, which has it enabled.
+        # Homebrew's Python is PEP 668 "externally managed", so create a venv
+        # and put it on PATH instead of pip-installing into it directly.
         if: matrix.os == 'macos-latest'
         run: |
           brew install python@3.12
-          echo "/opt/homebrew/opt/python@3.12/libexec/bin" >> "$GITHUB_PATH"
+          /opt/homebrew/opt/python@3.12/libexec/bin/python3 -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
 
       - name: Install ripgrep (for the fts5-vs-ripgrep benchmark test)
         run: |
