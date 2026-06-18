@@ -26,12 +26,12 @@
 - [x] 비정상 종료 후 재시작 시 정합성 복구 (mtime/hash 비교) — `sbsearch.indexer.reconcile_roots` (변경분 재색인 + 삭제된 파일의 잔존 인덱스 항목 제거), `watch`/`index` 커맨드 모두 시작 시 호출
 - [ ] 주기적 정합성 검사(백그라운드) 추가 검토 — `reconcile_roots`는 이미 구현되어 `sbsearch index`를 cron/launchd로 주기 실행하면 충족 가능하지만, 자동 스케줄링(launchd plist 등) 자체는 미구현. 필요성이 확인되면 Phase 4에서 다룸
 
-## Phase 3 — 시맨틱 검색
-- [ ] 청크 분할 전략 결정 및 구현
-- [ ] 로컬 임베딩 모델 확정 및 색인 파이프라인에 통합
-- [ ] `sqlite-vec` 기반 벡터 저장/조회 구현
-- [ ] `--semantic` 검색 모드 CLI 옵션 추가
-- [ ] 키워드 검색 결과와 시맨틱 결과 병합/표시 전략 결정
+## Phase 3 — 시맨틱 검색 ✅ 완료 (2026-06-18)
+- [x] 청크 분할 전략 결정 및 구현 — `sbsearch.chunking.chunk_text`(문단 단위 우선, 초과 시 오버랩 슬라이싱)
+- [x] 로컬 임베딩 모델 확정 및 색인 파이프라인에 통합 — `fastembed` + `paraphrase-multilingual-MiniLM-L12-v2`(다국어/한국어, 384차원, torch 미사용), `sbsearch.embeddings.LocalEmbedder`
+- [x] `sqlite-vec` 기반 벡터 저장/조회 구현 — `sbsearch.semantic`(`enable_vector_search`, `index_file_semantic`, `semantic_search`)
+- [x] `--semantic` 검색 모드 CLI 옵션 추가 — `sbsearch search --semantic`, `sbsearch index --semantic`
+- [x] 키워드 검색 결과와 시맨틱 결과 병합/표시 전략 결정 — 병합하지 않고 별도 모드로 분리(BM25/코사인 유사도는 척도가 달라 직접 비교 불가, RAG 랭커 없음). 근거: [PLAN.md](PLAN.md) Phase 3.
 
 ## Phase 4 — 다듬기 / 확장 (옵션)
 - [ ] 대용량 단일 log 파일 스트리밍 파싱 / 부분 색인
