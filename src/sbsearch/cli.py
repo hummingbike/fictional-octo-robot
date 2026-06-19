@@ -57,6 +57,13 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="as_semantic",
         help="also build/refresh the semantic (embedding) index (F6)",
     )
+    index_p.add_argument(
+        "--max-file-size",
+        type=int,
+        default=None,
+        dest="max_file_size_bytes",
+        help="skip files larger than this many bytes (omit for no limit)",
+    )
 
     watch_p = sub.add_parser(
         "watch", help="watch registered roots and keep the index in sync (F3)"
@@ -66,6 +73,13 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="stop after N seconds (omit to run until Ctrl+C)",
+    )
+    watch_p.add_argument(
+        "--max-file-size",
+        type=int,
+        default=None,
+        dest="max_file_size_bytes",
+        help="skip files larger than this many bytes (omit for no limit)",
     )
 
     search_p = sub.add_parser("search", help="search the index (F4, F5)")
@@ -128,7 +142,10 @@ def _cmd_index(args: argparse.Namespace, config_path: Path) -> int:
     db_path = resolve_db_path(config, config_path)
     con = open_index(db_path)
     result = reconcile_roots(
-        con, [Path(r) for r in config.roots], exclude_patterns=config.exclude_patterns
+        con,
+        [Path(r) for r in config.roots],
+        exclude_patterns=config.exclude_patterns,
+        max_file_size_bytes=args.max_file_size_bytes,
     )
     print(
         f"indexed {result.indexed} files into {db_path} "
@@ -146,6 +163,7 @@ def _cmd_index(args: argparse.Namespace, config_path: Path) -> int:
             [Path(r) for r in config.roots],
             embedder,
             exclude_patterns=config.exclude_patterns,
+            max_file_size_bytes=args.max_file_size_bytes,
         )
         print(
             f"semantic: indexed {semantic_result.indexed} files "
@@ -164,7 +182,10 @@ def _cmd_watch(args: argparse.Namespace, config_path: Path) -> int:
     con = open_index(db_path, check_same_thread=False)
 
     result = reconcile_roots(
-        con, [Path(r) for r in config.roots], exclude_patterns=config.exclude_patterns
+        con,
+        [Path(r) for r in config.roots],
+        exclude_patterns=config.exclude_patterns,
+        max_file_size_bytes=args.max_file_size_bytes,
     )
     print(f"reconciled: indexed {result.indexed}, removed {result.removed} stale entries")
 
@@ -173,6 +194,7 @@ def _cmd_watch(args: argparse.Namespace, config_path: Path) -> int:
         [Path(r) for r in config.roots],
         exclude_patterns=config.exclude_patterns,
         debounce_seconds=DEFAULT_DEBOUNCE_SECONDS,
+        max_file_size_bytes=args.max_file_size_bytes,
     )
     watcher.start()
     print(f"watching {len(config.roots)} root(s) for changes (Ctrl+C to stop)...")
