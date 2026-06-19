@@ -147,3 +147,20 @@ def test_watcher_respects_exclude_patterns(tmp_path):
         assert file_count(con) == 1
     finally:
         watcher.stop()
+
+
+def test_watcher_skips_files_over_max_size(tmp_path):
+    root = (tmp_path / "root").resolve()
+    root.mkdir()
+    con = open_index(tmp_path / "index.db", check_same_thread=False)
+
+    watcher = IndexWatcher(con, [root], max_file_size_bytes=100, debounce_seconds=0.05)
+    watcher.start()
+    try:
+        (root / "small.txt").write_text("x" * 10)
+        assert _wait_until(lambda: file_count(con) == 1)
+        (root / "huge.txt").write_text("x" * 1000)
+        time.sleep(0.5)
+        assert file_count(con) == 1
+    finally:
+        watcher.stop()

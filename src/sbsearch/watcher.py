@@ -70,6 +70,7 @@ class _RootEventHandler(FileSystemEventHandler):
         extensions: tuple[str, ...],
         exclude_spec,
         debouncer: Debouncer,
+        max_file_size_bytes: int | None = None,
     ) -> None:
         self._con = con
         self._write_lock = write_lock
@@ -77,6 +78,7 @@ class _RootEventHandler(FileSystemEventHandler):
         self._extensions = extensions
         self._exclude_spec = exclude_spec
         self._debouncer = debouncer
+        self._max_file_size_bytes = max_file_size_bytes
 
     def _is_relevant(self, path: Path) -> bool:
         if path.suffix not in self._extensions:
@@ -92,9 +94,17 @@ class _RootEventHandler(FileSystemEventHandler):
 
         def action() -> None:
             with self._write_lock:
-                if path.exists():
-                    index_file(self._con, path)
-                    self._con.commit()
+                if not path.exists():
+                    return
+                # Checked at actual indexing time (not event time) so a debounce
+                # delay can't leave a stale size decision -- see iter_matching_files.
+                if (
+                    self._max_file_size_bytes is not None
+                    and path.stat().st_size > self._max_file_size_bytes
+                ):
+                    return
+                index_file(self._con, path)
+                self._con.commit()
 
         self._debouncer.schedule(path_str, action)
 
@@ -142,6 +152,7 @@ class IndexWatcher:
         extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
         exclude_patterns: tuple[str, ...] | list[str] | None = None,
         debounce_seconds: float = DEFAULT_DEBOUNCE_SECONDS,
+        max_file_size_bytes: int | None = None,
     ) -> None:
         self._write_lock = threading.Lock()
         self._debouncer = Debouncer(debounce_seconds)
@@ -153,7 +164,13 @@ class IndexWatcher:
             # unresolved symlinked paths (see BENCHMARK_EVERYTHING.md sec. 5).
             resolved_root = Path(root).resolve()
             handler = _RootEventHandler(
-                con, self._write_lock, resolved_root, extensions, spec, self._debouncer
+                con,
+                self._write_lock,
+                resolved_root,
+                extensions,
+                spec,
+                self._debouncer,
+                max_file_size_bytes,
             )
             self._observer.schedule(handler, str(resolved_root), recursive=True)
 
