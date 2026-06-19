@@ -10,7 +10,11 @@ def test_measure_create_latency_detects_all_file_creations(tmp_path):
     assert result.dropped == 0
     assert len(result.samples) == 5
     assert all(sample >= 0 for sample in result.samples)
-    assert result.max < 5.0
+    # PRD.md NFR: incremental update latency must be under 1s. Phase 0 measured
+    # ~11.7ms avg / 14.3ms max over 200 events, so 1.0s leaves ~70x headroom
+    # against CI noise while still automating the documented target as a
+    # regression gate (this used to only check against the 5s test timeout).
+    assert result.max < 1.0
 
 
 def test_measure_create_latency_handles_unresolved_symlinked_tmpdir():
