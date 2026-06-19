@@ -294,13 +294,27 @@ def test_iter_matching_files_skips_file_that_vanishes_before_size_check(tmp_path
     vanish = tmp_path / "vanish.txt"
     keep.write_text("x")
     vanish.write_text("y")
+
+    # Pin is_file() to "yes, it's a file" for vanish.txt -- as it genuinely
+    # was when rglob listed it -- so the race is isolated to the later,
+    # separate stat() call iter_matching_files makes for the size check.
+    # (Patching only Path.stat isn't reliable here: is_file()'s own
+    # FileNotFoundError handling differs across Python versions, and on
+    # some it doesn't even route through the patched bound method.)
+    original_is_file = Path.is_file
     original_stat = Path.stat
+
+    def fake_is_file(self, *args, **kwargs):
+        if self.name == "vanish.txt":
+            return True
+        return original_is_file(self, *args, **kwargs)
 
     def flaky_stat(self, *args, **kwargs):
         if self.name == "vanish.txt":
-            raise FileNotFoundError(self)
+            raise FileNotFoundError(2, "No such file or directory", str(self))
         return original_stat(self, *args, **kwargs)
 
+    monkeypatch.setattr(Path, "is_file", fake_is_file)
     monkeypatch.setattr(Path, "stat", flaky_stat)
 
     found = list(iter_matching_files(tmp_path, max_file_size_bytes=100))
