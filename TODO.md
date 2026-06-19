@@ -7,7 +7,7 @@
 - [x] SQLite FTS5 색인 속도 실측 → 1만 파일/11.9MB 기준 15.7초
 - [x] SQLite FTS5 검색 응답시간 실측 (`ripgrep` 풀스캔과 비교) → 평균 0.07ms vs 198.9ms (~2,650배)
 - [x] `watchdog`(FSEvents) 이벤트 지연/누락 여부 실측 → 200건 연속, 평균 11.7ms, 누락 0건. 심볼릭 링크 미해결 시 이벤트 0건 전달되는 버그 발견 및 수정
-- [ ] 임베딩 모델 후보 2~3개 비교 — **Phase 3로 연기** (torch 등 무거운 의존성, 스파이크 범위에서 제외)
+- [x] 임베딩 모델 후보 2~3개 비교 — **Phase 3로 연기 후 다른 방식으로 해결**: 2~3개 후보 실측 비교 대신, 환경 제약(torch 무거움/Ollama 서버 미설치)이 사실상 후보를 `fastembed` 하나로 좁혀 비교 없이 결정. 근거: [PLAN.md](PLAN.md) 2장, [PRD.md](PRD.md) 10장.
 - [x] 실측 결과로 PRD.md 7~8장 수치 보정
 
 ## Phase 1 — 키워드 검색 MVP ✅ 완료 (2026-06-18)
@@ -24,7 +24,7 @@
 - [x] 생성/수정/삭제/이동 이벤트별 인덱스 갱신 로직 — `_RootEventHandler` (on_created/on_modified → 재색인, on_deleted → 제거, on_moved → 이전 경로 제거 + 새 경로 재색인)
 - [x] 다중 이벤트 디바운싱 (짧은 시간 내 동일 파일 다중 변경 처리) — `sbsearch.watcher.Debouncer` (경로별 타이머 코얼레싱)
 - [x] 비정상 종료 후 재시작 시 정합성 복구 (mtime/hash 비교) — `sbsearch.indexer.reconcile_roots` (변경분 재색인 + 삭제된 파일의 잔존 인덱스 항목 제거), `watch`/`index` 커맨드 모두 시작 시 호출
-- [ ] 주기적 정합성 검사(백그라운드) 추가 검토 — `reconcile_roots`는 이미 구현되어 `sbsearch index`를 cron/launchd로 주기 실행하면 충족 가능하지만, 자동 스케줄링(launchd plist 등) 자체는 미구현. 필요성이 확인되면 Phase 4에서 다룸
+- [x] 주기적 정합성 검사(백그라운드) 추가 검토 — **Phase 4에서 결론**: `reconcile_roots`가 이미 구현되어 있으므로 `sbsearch index`를 cron/launchd로 주기 실행하면 충족됨. 도구 자체에 스케줄러를 내장하지 않고 OS 표준 메커니즘(launchd/cron)에 위임하기로 결정 — 운영 설정은 사용자 환경에 따라 다르므로 도구 범위 밖으로 유지.
 
 ## Phase 3 — 시맨틱 검색 ✅ 완료 (2026-06-18)
 - [x] 청크 분할 전략 결정 및 구현 — `sbsearch.chunking.chunk_text`(문단 단위 우선, 초과 시 오버랩 슬라이싱)
