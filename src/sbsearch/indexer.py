@@ -87,17 +87,23 @@ def iter_matching_files(
     root: Path,
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
     exclude_patterns: tuple[str, ...] | list[str] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> Iterator[Path]:
     """Walk `root`, yielding files matching `extensions` and not excluded.
 
-    Shared by the keyword indexer and the semantic (chunk/embed) indexer so
-    both apply identical root/extension/exclude filtering (F1).
+    Files larger than `max_file_size_bytes` (if set) are skipped -- the
+    "1차" mitigation from PLAN.md's risk table for very large single log
+    files, until/unless streaming partial indexing is ever justified by
+    actual usage. Shared by the keyword indexer and the semantic
+    (chunk/embed) indexer so both apply identical F1 filtering.
     """
     spec = build_pathspec(exclude_patterns) if exclude_patterns else None
     for path in sorted(root.rglob("*")):
         if not path.is_file() or path.suffix not in extensions:
             continue
         if spec is not None and is_excluded(spec, root, path):
+            continue
+        if max_file_size_bytes is not None and path.stat().st_size > max_file_size_bytes:
             continue
         yield path
 
@@ -107,14 +113,16 @@ def index_directory(
     root: Path,
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
     exclude_patterns: tuple[str, ...] | list[str] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> int:
     """Walk `root` and index every file matching `extensions`.
 
     Files matching `exclude_patterns` (.gitignore-style, relative to `root`)
-    are skipped. Commits once at the end. Returns the number of files processed.
+    or exceeding `max_file_size_bytes` are skipped. Commits once at the end.
+    Returns the number of files processed.
     """
     count = 0
-    for path in iter_matching_files(root, extensions, exclude_patterns):
+    for path in iter_matching_files(root, extensions, exclude_patterns, max_file_size_bytes):
         index_file(con, path)
         count += 1
     con.commit()
@@ -126,10 +134,12 @@ def index_roots(
     roots: Iterable[Path],
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
     exclude_patterns: tuple[str, ...] | list[str] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> int:
     """Index multiple root folders (F1), applying the same exclude patterns to each."""
     return sum(
-        index_directory(con, root, extensions, exclude_patterns) for root in roots
+        index_directory(con, root, extensions, exclude_patterns, max_file_size_bytes)
+        for root in roots
     )
 
 
@@ -148,6 +158,7 @@ def reconcile_roots(
     roots: Iterable[Path],
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
     exclude_patterns: tuple[str, ...] | list[str] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> ReconcileResult:
     """Bring the index back in sync with the filesystem (F3 restart recovery).
 
@@ -156,7 +167,7 @@ def reconcile_roots(
     exists -- covering deletes/moves that happened while no watcher was
     running, e.g. after a crash or before the first `watch` invocation.
     """
-    indexed = index_roots(con, roots, extensions, exclude_patterns)
+    indexed = index_roots(con, roots, extensions, exclude_patterns, max_file_size_bytes)
 
     removed = 0
     for (path_str,) in con.execute("SELECT path FROM files_fts").fetchall():

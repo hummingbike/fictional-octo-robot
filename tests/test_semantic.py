@@ -119,6 +119,20 @@ def test_index_roots_semantic_indexes_every_matching_file(tmp_path):
     assert paths == {str(root / "a.txt"), str(root / "b.md")}
 
 
+def test_index_roots_semantic_skips_oversized_files(tmp_path):
+    con = _open(tmp_path)
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "small.txt").write_text("x" * 10)
+    (root / "huge.txt").write_text("x" * 1000)
+
+    count = index_roots_semantic(con, [root], FakeEmbedder(), max_file_size_bytes=100)
+
+    assert count == 1
+    paths = {row[0] for row in con.execute("SELECT DISTINCT path FROM chunks").fetchall()}
+    assert paths == {str(root / "small.txt")}
+
+
 def test_reconcile_roots_semantic_removes_chunks_for_deleted_files(tmp_path):
     con = _open(tmp_path)
     root = tmp_path / "root"
