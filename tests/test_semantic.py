@@ -8,6 +8,7 @@ a hashed bag-of-words stand-in replaces the real ONNX model.
 
 import hashlib
 import math
+from pathlib import Path
 
 from sbsearch.embeddings import EMBEDDING_DIM
 from sbsearch.indexer import open_index
@@ -88,6 +89,41 @@ def test_index_file_semantic_reindexes_changed_content(tmp_path):
     assert changed is True
     row = con.execute("SELECT text FROM chunks WHERE path = ?", (str(f),)).fetchone()
     assert row[0] == "updated content here"
+
+
+def test_index_file_semantic_skips_file_deleted_before_read(tmp_path):
+    con = _open(tmp_path)
+    f = tmp_path / "ghost.txt"
+    f.write_text("will vanish")
+    f.unlink()  # simulate a race: listed, then removed before this call reads it
+
+    assert index_file_semantic(con, f, FakeEmbedder()) is False
+    assert con.execute("SELECT count(*) FROM chunks").fetchone()[0] == 0
+
+
+def test_index_roots_semantic_continues_after_a_file_disappears_mid_scan(tmp_path, monkeypatch):
+    con = _open(tmp_path)
+    root = tmp_path / "root"
+    root.mkdir()
+    keep = root / "keep.txt"
+    vanish = root / "vanish.txt"
+    keep.write_text("keep me")
+    vanish.write_text("will be deleted")
+
+    original_read_text = Path.read_text
+
+    def flaky_read_text(self, *args, **kwargs):
+        if self.name == "vanish.txt":
+            raise FileNotFoundError(self)
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    count = index_roots_semantic(con, [root], FakeEmbedder())
+
+    assert count == 1
+    paths = {row[0] for row in con.execute("SELECT DISTINCT path FROM chunks").fetchall()}
+    assert paths == {str(keep)}
 
 
 def test_remove_chunks_deletes_rows_and_vectors(tmp_path):

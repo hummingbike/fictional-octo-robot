@@ -98,6 +98,13 @@ CREATE TABLE chunks (
 - [x] 멀티플랫폼 어댑터 분리 — `watchdog`가 이미 OS별 백엔드를 추상화하고 있어 별도 어댑터 계층 불필요. CI macOS/Linux 매트릭스가 두 백엔드(FSEvents/inotify) 모두를 매 커밋마다 검증.
 - [x] 성능 회귀 테스트 자동화 — PRD M1(검색 속도 5배 이상)과 NFR(증분 갱신 1초 이내)을 CI에서 매번 검증하는 단언 추가.
 
+### Phase 5 — 기존 구현 안정성 강화 ✅ 완료 (2026-06-19)
+- [x] 색인 중 파일 레이스 컨디션 방어: `index_file`/`index_file_semantic`이 파일을 읽거나 stat하는 시점에 파일이 사라지거나(`FileNotFoundError`) 권한이 없으면(`PermissionError`) 예외를 전파해 `index_directory`/`index_roots_semantic` 전체 루프를 죽이던 문제를 수정. 이제 해당 파일만 건너뛰고(`False` 반환) 나머지 파일은 정상 색인됨. `iter_matching_files`의 크기 체크(`stat()`) 단계도 동일하게 보호.
+  - **왜 필요했나**: PRD 7장 "신뢰성" NFR(비정상 종료 후에도 인덱스 손상 없이 복구)은 인덱스 파일 자체의 일관성만 다뤘고, 색인 *대상* 파일이 스캔 도중 사라지거나 읽기 불가능해지는 경우(에디터 임시파일, 권한 변경, F3 워처의 디바운스 지연 중 삭제 등)는 다루지 않았음 — 실제로 어떤 테스트도 이 경로를 검증하지 않고 있었음.
+  - F3 워처(`_schedule_upsert`)는 액션 실행 시점에 `path.exists()`를 먼저 확인하지만 그 체크와 실제 읽기 사이에도 미세한 레이스 윈도우가 남아있었음 — `index_file` 자체를 방어적으로 만들어 워처 쪽 별도 수정 없이 동일하게 안전해짐.
+  - 단위테스트: `test_indexer.py`(`test_index_file_skips_file_deleted_before_read`, `test_index_file_skips_unreadable_file`, `test_index_directory_continues_after_a_file_disappears_mid_scan`, `test_iter_matching_files_skips_file_that_vanishes_before_size_check`), `test_semantic.py`(`test_index_file_semantic_skips_file_deleted_before_read`, `test_index_roots_semantic_continues_after_a_file_disappears_mid_scan`).
+- [ ] 비-UTF8 인코딩 자동 감지(PRD 9장 오픈 가정) — 범위 밖으로 유지: 현재 `errors="replace"`로 깨진 바이트를 대체 문자로 치환해 크래시 없이 동작은 하지만, 내용이 손실됨. 실사용(한국어 텍스트, 대부분 UTF-8/UTF-8-BOM)에서 문제가 보고되지 않는 한 `chardet`류 의존성 추가는 보류.
+
 ## 5. 성능 전략 요약
 - **색인 시점에 비용 집중**: 텍스트 읽기/토큰화/임베딩은 모두 색인 단계에서 끝낸다.
 - **검색 시점은 인덱스 조회만**: FTS5 BM25 쿼리 + (옵션) 벡터 kNN 조회만 수행, 디스크 풀스캔 금지.
@@ -111,3 +118,4 @@ CREATE TABLE chunks (
 | 대형 단일 log 파일(GB 단위) | **해결됨 (Phase 4)**: `max_file_size_bytes` 옵션으로 일정 크기 이상 파일은 색인 제외 (`sbsearch index/watch --max-file-size N`). 스트리밍 파싱/부분 색인은 개인 규모 목표에서 불필요 판단, 실사용으로 필요성 확인 시 재검토 |
 | 임베딩 모델 성능/품질 트레이드오프 | Phase 0/3에서 실측 비교 후 결정, 모델 교체 가능하도록 추상화 |
 | SQLite 동시 쓰기(검색 중 색인 갱신) | WAL 모드 사용으로 읽기/쓰기 동시성 확보 |
+| ~~색인 스캔 도중 파일이 삭제/권한변경되면 전체 색인 루프가 예외로 중단됨~~ | **해결됨 (Phase 5)**: `index_file`/`index_file_semantic`/`iter_matching_files`가 `OSError`를 잡아 해당 파일만 건너뛰고 계속 진행하도록 수정 |

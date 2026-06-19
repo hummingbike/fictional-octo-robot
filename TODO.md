@@ -38,6 +38,12 @@
 - [x] 멀티플랫폼 어댑터 인터페이스 분리 (Linux inotify 등, 구현은 보류) — **이미 충족됨**: `watchdog` 라이브러리가 OS별 네이티브 백엔드(macOS FSEvents / Linux inotify)를 런타임에 자동 선택하므로 별도 어댑터 계층이 불필요. CI가 `test_watcher.py`/`test_watch_latency.py`를 macOS+Linux 매트릭스에서 모두 실행해 Linux(inotify) 동작을 이미 검증 중(PR #3/#4에서 ubuntu-latest 통과 확인). 새 코드 추가 없이 기존 설계로 요구사항 충족.
 - [x] 성능 회귀 테스트(벤치마크 스위트) 자동화 — `test_search_speedup_meets_prd_m1_target`(PRD M1: ripgrep 대비 5배 이상)과 `test_measure_create_latency_detects_all_file_creations`의 `result.max < 1.0`(PRD NFR: 증분 갱신 지연 1초 이내) 단언을 추가해 모든 CI 실행에서 자동으로 회귀를 감지하도록 함. 1만 파일 규모의 전체 벤치마크는 CI 비용 대비 가치가 낮아 자동화 대상에서 제외, `python -m sbsearch.bench.fts5_vs_ripgrep --num-files 10000` 수동 실행으로 유지.
 
+## Phase 5 — 기존 구현 안정성 강화 ✅ 완료 (2026-06-19)
+- [x] `index_file`/`index_file_semantic`이 파일 읽기/stat 중 `OSError`(파일 삭제 레이스, 권한 거부)를 잡아 해당 파일만 건너뛰도록 수정 — 이전에는 예외가 `index_directory`/`index_roots_semantic` 루프 전체를 중단시켰음
+- [x] `iter_matching_files`의 크기 제한 체크(`stat()`)도 동일한 레이스에 대해 방어
+- [x] 단위테스트 추가: `test_indexer.py`(파일 삭제 레이스/권한거부/스캔 도중 파일 소실 시 나머지 파일 정상 색인/크기체크 레이스), `test_semantic.py`(동일 시나리오의 시맨틱 색인 버전)
+- [x] PRD/PLAN 신뢰성 NFR·리스크 표에 보강 내용 반영
+
 ## 문서/기획
 - [x] PRD.md 초안 작성
 - [x] PLAN.md 초안 작성

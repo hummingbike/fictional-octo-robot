@@ -68,9 +68,14 @@ def index_file_semantic(con: sqlite3.Connection, path: Path, embedder: LocalEmbe
     """Chunk, embed, and store one file's vectors.
 
     Returns True if (re)indexed, False if the file's content hash matches
-    what's already stored (mirrors indexer.index_file's change detection).
+    what's already stored (mirrors indexer.index_file's change detection),
+    or if the file could not be read (vanished/permission denied since being
+    listed -- mirrors indexer.index_file's race handling).
     """
-    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
     content_hash = _hash_text(text)
     path_str = str(path)
 
