@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from sbsearch.indexer import (
     file_count,
     index_directory,
@@ -238,6 +240,72 @@ def test_reconcile_roots_passes_through_max_file_size(tmp_path):
 
     assert result.indexed == 1
     assert file_count(con) == 1
+
+
+def test_index_file_skips_file_deleted_before_read(tmp_path):
+    f = tmp_path / "ghost.txt"
+    f.write_text("will vanish")
+    con = open_index(tmp_path / "index.db")
+    f.unlink()  # simulate a race: listed, then removed before index_file reads it
+
+    assert index_file(con, f) is False
+    assert file_count(con) == 0
+
+
+def test_index_file_skips_unreadable_file(tmp_path, monkeypatch):
+    f = tmp_path / "locked.txt"
+    f.write_text("secret")
+    con = open_index(tmp_path / "index.db")
+
+    def deny(self, *args, **kwargs):
+        raise PermissionError(self)
+
+    monkeypatch.setattr(Path, "read_text", deny)
+
+    assert index_file(con, f) is False
+    assert file_count(con) == 0
+
+
+def test_index_directory_continues_after_a_file_disappears_mid_scan(tmp_path, monkeypatch):
+    keep = tmp_path / "keep.txt"
+    vanish = tmp_path / "vanish.txt"
+    keep.write_text("keep me")
+    vanish.write_text("will be deleted")
+    con = open_index(tmp_path / "index.db")
+
+    original_read_text = Path.read_text
+
+    def flaky_read_text(self, *args, **kwargs):
+        if self.name == "vanish.txt":
+            raise FileNotFoundError(self)
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    index_directory(con, tmp_path)
+
+    assert file_count(con) == 1
+    row = con.execute("SELECT path FROM files_fts").fetchone()
+    assert row[0] == str(keep)
+
+
+def test_iter_matching_files_skips_file_that_vanishes_before_size_check(tmp_path, monkeypatch):
+    keep = tmp_path / "keep.txt"
+    vanish = tmp_path / "vanish.txt"
+    keep.write_text("x")
+    vanish.write_text("y")
+    original_stat = Path.stat
+
+    def flaky_stat(self, *args, **kwargs):
+        if self.name == "vanish.txt":
+            raise FileNotFoundError(self)
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", flaky_stat)
+
+    found = list(iter_matching_files(tmp_path, max_file_size_bytes=100))
+
+    assert found == [keep]
 
 
 def test_index_roots_applies_excludes_to_every_root(tmp_path):

@@ -51,12 +51,18 @@ def index_file(con: sqlite3.Connection, path: Path) -> bool:
     """Index or re-index a single file.
 
     Returns True if the index was changed (new file, or content differs from
-    what's already indexed); False if the existing entry is already current.
-    Caller is responsible for committing.
+    what's already indexed); False if the existing entry is already current,
+    or if the file could not be read (vanished/permission denied between
+    being listed and being read here -- a real race for F3's watcher, whose
+    debounced action re-checks `path.exists()` but can't close the window
+    entirely). Caller is responsible for committing.
     """
-    text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        stat = path.stat()
+    except OSError:
+        return False
     content_hash = _hash_text(text)
-    stat = path.stat()
     path_str = str(path)
 
     row = con.execute(
@@ -103,8 +109,14 @@ def iter_matching_files(
             continue
         if spec is not None and is_excluded(spec, root, path):
             continue
-        if max_file_size_bytes is not None and path.stat().st_size > max_file_size_bytes:
-            continue
+        if max_file_size_bytes is not None:
+            try:
+                if path.stat().st_size > max_file_size_bytes:
+                    continue
+            except OSError:
+                # Vanished between the rglob listing and this stat call; skip
+                # it the same way index_file would if asked to read it.
+                continue
         yield path
 
 
