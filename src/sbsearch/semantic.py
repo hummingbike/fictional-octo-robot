@@ -102,11 +102,14 @@ def index_roots_semantic(
     embedder: LocalEmbedder,
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
     exclude_patterns: tuple[str, ...] | list[str] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> int:
     """Semantic-index every matching file under `roots`. Returns files (re)indexed."""
     count = 0
     for root in roots:
-        for path in iter_matching_files(Path(root), extensions, exclude_patterns):
+        for path in iter_matching_files(
+            Path(root), extensions, exclude_patterns, max_file_size_bytes
+        ):
             if index_file_semantic(con, path, embedder):
                 count += 1
     con.commit()
@@ -125,10 +128,13 @@ def reconcile_roots_semantic(
     embedder: LocalEmbedder,
     extensions: tuple[str, ...] = DEFAULT_EXTENSIONS,
     exclude_patterns: tuple[str, ...] | list[str] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> SemanticReconcileResult:
     """Semantic analogue of indexer.reconcile_roots: re-embed changed files and
     drop chunks for files deleted since the last semantic index/watch run."""
-    indexed = index_roots_semantic(con, roots, embedder, extensions, exclude_patterns)
+    indexed = index_roots_semantic(
+        con, roots, embedder, extensions, exclude_patterns, max_file_size_bytes
+    )
 
     removed = 0
     paths = {row[0] for row in con.execute("SELECT DISTINCT path FROM chunks").fetchall()}

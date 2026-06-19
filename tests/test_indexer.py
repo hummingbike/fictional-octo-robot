@@ -94,6 +94,26 @@ def test_iter_matching_files_filters_extensions_and_excludes(tmp_path):
     assert found == [tmp_path / "keep.md"]
 
 
+def test_iter_matching_files_skips_files_over_max_size(tmp_path):
+    small = tmp_path / "small.txt"
+    large = tmp_path / "large.txt"
+    small.write_text("x" * 10)
+    large.write_text("x" * 1000)
+
+    found = list(iter_matching_files(tmp_path, max_file_size_bytes=100))
+
+    assert found == [small]
+
+
+def test_iter_matching_files_no_size_limit_by_default(tmp_path):
+    large = tmp_path / "large.txt"
+    large.write_text("x" * 1000)
+
+    found = list(iter_matching_files(tmp_path))
+
+    assert found == [large]
+
+
 def test_open_index_creates_missing_parent_directory(tmp_path):
     db_path = tmp_path / "nested" / "deeper" / "index.db"
 
@@ -192,6 +212,32 @@ def test_reconcile_roots_removes_entries_for_deleted_files(tmp_path):
     assert file_count(con) == 1
     row = con.execute("SELECT path FROM files_fts").fetchone()
     assert row[0] == str(keep)
+
+
+def test_index_directory_skips_oversized_files(tmp_path):
+    (tmp_path / "small.txt").write_text("x" * 10)
+    (tmp_path / "huge.log").write_text("x" * 1000)
+    con = open_index(tmp_path / "index.db")
+
+    count = index_directory(con, tmp_path, max_file_size_bytes=100)
+
+    assert count == 1
+    assert file_count(con) == 1
+    row = con.execute("SELECT path FROM files_fts").fetchone()
+    assert row[0] == str(tmp_path / "small.txt")
+
+
+def test_reconcile_roots_passes_through_max_file_size(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "small.txt").write_text("x" * 10)
+    (root / "huge.log").write_text("x" * 1000)
+    con = open_index(tmp_path / "index.db")
+
+    result = reconcile_roots(con, [root], max_file_size_bytes=100)
+
+    assert result.indexed == 1
+    assert file_count(con) == 1
 
 
 def test_index_roots_applies_excludes_to_every_root(tmp_path):

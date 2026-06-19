@@ -144,6 +144,24 @@ def test_index_removes_entries_for_deleted_files(tmp_path, capsys):
     assert status["file_count"] == 1
 
 
+def test_index_max_file_size_skips_oversized_files(tmp_path, capsys):
+    config_path = _config_path(tmp_path)
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "small.txt").write_text("x" * 10)
+    (folder / "huge.txt").write_text("x" * 1000)
+
+    main(["--config", config_path, "root", "add", str(folder)])
+    capsys.readouterr()
+    main(["--config", config_path, "index", "--max-file-size", "100"])
+    output = capsys.readouterr().out
+    assert "indexed 1 files" in output
+
+    main(["--config", config_path, "status"])
+    status = json.loads(capsys.readouterr().out)
+    assert status["file_count"] == 1
+
+
 def test_watch_with_timeout_indexes_newly_created_file(tmp_path, capsys):
     config_path = _config_path(tmp_path)
     folder = tmp_path / "notes"
