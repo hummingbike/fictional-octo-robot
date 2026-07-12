@@ -77,6 +77,56 @@ def test_search_supports_not_operator(tmp_path):
     assert results[0].path.endswith("keep.txt")
 
 
+def test_search_bare_korean_term_matches_inflected_token(tmp_path):
+    con = _indexed(
+        tmp_path,
+        {
+            "meeting.md": "오늘 회의에서 예산안을 논의했다",
+            "unrelated.md": "장보기 목록: 우유, 계란",
+        },
+    )
+
+    for query in ("예산안", "회의", "예산안 논의"):
+        results = search(con, query)
+        assert [r.path.endswith("meeting.md") for r in results] == [True], query
+
+
+def test_search_plain_multi_term_query_requires_all_terms(tmp_path):
+    con = _indexed(
+        tmp_path,
+        {
+            "both.txt": "quick brown fox",
+            "one.txt": "quick rabbit",
+        },
+    )
+
+    results = search(con, "quick fox")
+
+    assert [r.path.endswith("both.txt") for r in results] == [True]
+
+
+def test_search_plain_query_with_punctuation_does_not_raise(tmp_path):
+    con = _indexed(tmp_path, {"note.txt": "check the foo-bar setting"})
+
+    results = search(con, "foo-bar")
+
+    assert [r.path.endswith("note.txt") for r in results] == [True]
+
+
+def test_search_query_with_fts5_syntax_is_passed_through(tmp_path):
+    con = _indexed(
+        tmp_path,
+        {
+            "exact.txt": "예산안 확정",
+            "inflected.txt": "예산안을 논의했다",
+        },
+    )
+
+    results = search(con, '"예산안" 확정')
+
+    assert [r.path.endswith("exact.txt") for r in results] == [True]
+
+
 def test_search_snippet_highlights_match(tmp_path):
     con = _indexed(tmp_path, {"alpha.txt": "the quick brown fox jumps"})
 
